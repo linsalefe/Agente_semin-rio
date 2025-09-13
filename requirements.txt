@@ -13,3 +13,8 @@ schedule
 pandas
 chromadb
 tiktoken
+fastapi
+uvicorn
+loguru
+openpyxl
+pydantic-settings

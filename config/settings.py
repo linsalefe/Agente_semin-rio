@@ -1,4 +1,5 @@
 import os
+from typing import Dict, ClassVar
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,7 +11,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
     
-    # Mega API WhatsApp (baseado no seu projeto)
+    # Mega API WhatsApp
     MEGA_API_BASE_URL: str = "https://apistart03.megaapi.com.br"
     MEGA_API_TOKEN: str = ""
     MEGA_INSTANCE_ID: str = ""
@@ -22,14 +23,18 @@ class Settings(BaseSettings):
     GOOGLE_CALENDAR_CREDENTIALS_PATH: str = "credentials.json"
     GOOGLE_CALENDAR_ID: str = ""
     
-    # Agent Settings (para agente ativo)
+    # Agent Settings
     BATCH_SIZE: int = 10
     DELAY_BETWEEN_MESSAGES: int = 30
     MAX_RETRIES: int = 3
     WEBHOOK_URL: str = ""
     
-    # Lead Status
-    LEAD_STATUS = {
+    # Anti-loop
+    IGNORE_FROM_ME: bool = True
+    DEDUP_TTL: float = 12.0
+    
+    # Lead Status (ClassVar para não ser campo do modelo)
+    LEAD_STATUS: ClassVar[Dict[str, str]] = {
         "NEW": "novo",
         "CONTACTED": "contatado", 
         "QUALIFIED": "qualificado",
@@ -38,14 +43,9 @@ class Settings(BaseSettings):
         "LOST": "perdido"
     }
     
-    # Anti-loop (do seu projeto)
-    IGNORE_FROM_ME: bool = True
-    DEDUP_TTL: float = 12.0
-    
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     
-    @classmethod
-    def validate_settings(cls):
+    def validate_settings(self):
         """Valida configurações obrigatórias"""
         required_settings = [
             "ANTHROPIC_API_KEY",
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         
         missing = []
         for setting in required_settings:
-            if not getattr(cls, setting):
+            if not getattr(self, setting):
                 missing.append(setting)
         
         if missing:
