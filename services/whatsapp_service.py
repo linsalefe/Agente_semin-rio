@@ -19,7 +19,7 @@ class WhatsAppService:
         
         # Rate limiting
         self.last_sent = {}
-        self.min_interval = 30  # segundos entre mensagens
+        self.min_interval = 5  # segundos entre mensagens
         
         # Informações do seminário
         self.seminario_info = {

@@ -21,15 +21,22 @@ def _only_digits(s: str) -> str:
 
 def _extract_phone(payload: Dict[str, Any]) -> Optional[str]:
     """
-    Tenta extrair o telefone do JID em vários campos.
+    Tenta extrair o telefone correto: quem RECEBEU a mensagem, não quem enviou
     """
-    jid = payload.get("jid") or payload.get("key", {}).get("remoteJid") or ""
+    # PRIORIDADE 1: remoteJid da key (quem recebeu a mensagem)
+    remote_jid = payload.get("key", {}).get("remoteJid") or ""
+    if remote_jid and ("@s.whatsapp.net" in remote_jid or "@g.us" in remote_jid):
+        return _only_digits(remote_jid.split("@")[0])
+    
+    # PRIORIDADE 2: jid principal (fallback)
+    jid = payload.get("jid") or ""
     jid = str(jid)
     if "@s.whatsapp.net" in jid:
         return _only_digits(jid.replace("@s.whatsapp.net", ""))
     if "@g.us" in jid:
         return _only_digits(jid.replace("@g.us", ""))
-    # fallback: às vezes vem no participant
+    
+    # PRIORIDADE 3: participant (último recurso)
     participant = (
         payload.get("message", {})
                .get("listResponseMessage", {})
@@ -42,6 +49,7 @@ def _extract_phone(payload: Dict[str, Any]) -> Optional[str]:
     )
     if participant:
         return _only_digits(str(participant).split("@")[0])
+    
     return None
 
 def _extract_user_name(payload: Dict[str, Any]) -> str:
