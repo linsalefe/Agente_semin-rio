@@ -1,0 +1,15 @@
+anthropic
+langchain
+langchain-anthropic
+langchain-community
+requests
+python-dotenv
+sqlalchemy
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+schedule
+pandas
+chromadb
+tiktoken
