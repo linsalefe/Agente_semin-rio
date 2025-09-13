@@ -42,6 +42,8 @@ venv.bak/
 
 # Google credentials
 credentials.json
+credenciais-google.json
+
 token.json
 
 # OS

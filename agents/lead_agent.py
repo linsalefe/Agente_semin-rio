@@ -140,19 +140,19 @@ class LeadAgent:
                 return await self._process_scheduling_with_email(phone, user_name, email)
             else:
                 logger.info(f"ℹ️ Contexto geral de email para {phone}")
-                # Contexto geral de email fornecido
-                msg = f"Perfeito, {user_name}! Salvei seu email: {email}\n\nVou te enviar as informações por lá também. Te retorno em breve! 😊"
+                # Contexto geral de email fornecido - CORRIGIDO
+                msg = f"Perfeito, {user_name}! Email salvo: {email}"
                 await whatsapp_service.send_text_message(phone, msg)
                 db_manager.update_lead_status(phone, "EMAIL_PROVIDED")
                 return "Email salvo - contexto geral"
 
         except Exception as e:
             logger.error(f"❌ Erro ao processar email {phone}: {e}")
-            await whatsapp_service.send_text_message(phone, "Email recebido! Vou organizar isso pra você.")
+            await whatsapp_service.send_text_message(phone, "Email recebido!")
             return "Erro ao processar email"
 
     def _has_meeting_accepted_context(self, chat_history: List[Dict]) -> bool:
-        """Verifica se há contexto de reunião aceita recentemente - MELHORADO"""
+        """Verifica se há contexto de reunião aceita recentemente"""
         logger.info(f"🔍 Verificando contexto de reunião aceita")
         
         for i, msg in enumerate(chat_history[-10:]):  # últimas 10 mensagens
@@ -166,9 +166,8 @@ class LeadAgent:
                 "meeting_pref:aceita_reuniao",
                 "sim, quero uma reunião",
                 "agendar 20–30 min",
-                "qual seu e-mail para eu adiantar",
-                "deixa eu verificar nossa agenda",
-                "te passo horários",
+                "qual seu e-mail",
+                "qual seu email", 
                 "waiting_email_for_scheduling"
             ]
             
@@ -413,7 +412,7 @@ Responda APENAS à mensagem atual, sem fugir do assunto."""
         }
         return fallbacks.get(stage, "Deixa eu organizar isso pra você!")
 
-    # ========================= RESTO DOS MÉTODOS (mantidos iguais) =========================
+    # ========================= RESTO DOS MÉTODOS =========================
     async def start_post_seminar_campaign(self, phone: str, name: str, seminario_nome: str = None) -> bool:
         """Inicia campanha pós-seminário"""
         try:
@@ -549,29 +548,29 @@ Responda APENAS à mensagem atual, sem fugir do assunto."""
         )
 
     async def handle_meeting_response(self, phone: str, response_id: str, user_name: str = "Cliente") -> str:
-        """Trata resposta sobre reunião"""
+        """Trata resposta sobre reunião - CORRIGIDO"""
         db_manager.save_chat_message(phone=phone, role="user", message=f"meeting_pref:{response_id}")
 
         if response_id == "aceita_reuniao":
-            msg = f"Deixa eu verificar nossa agenda, {user_name}! Em alguns minutos te passo horários. Qual seu e-mail para eu adiantar sua ficha?"
+            msg = f"Perfeito, {user_name}! Qual seu email para eu organizar nossa reunião?"
             await whatsapp_service.send_text_message(phone, msg)
             db_manager.update_lead_status(phone, "WAITING_EMAIL_FOR_SCHEDULING")
             return "Aguardando email para agendamento"
 
         if response_id == "prefere_whatsapp":
-            msg = f"Ótimo, {user_name}! Te explico por aqui e te mando os próximos passos. 👍"
+            msg = f"Ótimo, {user_name}! Te explico as opções por aqui mesmo."
             await whatsapp_service.send_text_message(phone, msg)
             db_manager.update_lead_status(phone, "TRANSFERRED_WHATSAPP")
             return "WhatsApp preferido"
 
         if response_id == "prefere_email":
-            msg = "Perfeito! Me passa seu melhor e-mail para eu enviar as informações. 📧"
+            msg = "Perfeito! Me passa seu email que te envio tudo certinho."
             await whatsapp_service.send_text_message(phone, msg)
             db_manager.update_lead_status(phone, "WAITING_EMAIL")
             return "Aguardando e-mail"
 
         # sem_tempo
-        msg = "Tranquilo! Quando surgir um tempinho, me chama que agendamos rapidinho. 😉"
+        msg = "Tranquilo! Quando der, me chama que organizamos."
         await whatsapp_service.send_text_message(phone, msg)
         db_manager.update_lead_status(phone, "FUTURE_MEETING")
         return "Sem tempo"
