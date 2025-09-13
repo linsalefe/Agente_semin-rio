@@ -8,15 +8,16 @@ from config.settings import settings
 from database.database import db_manager
 from services.whatsapp_service import whatsapp_service
 from services.calendar_service import calendar_service
+from utils.helpers import rag
 
 class LeadAgent:
-    """Agente de IA para agendar reuniões com leads do seminário"""
+    """Agente de IA para agendar reuniões com leads do seminário - COM RAG"""
     
     def __init__(self):
         self.anthropic = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
         self.model = settings.CLAUDE_MODEL
         
-        # Contexto: OBJETIVO = AGENDAR REUNIÕES
+        # Contexto genérico - informações vêm do RAG
         self.context = """
 OBJETIVO: Agendar reuniões com leads interessados na pós-graduação
 
@@ -30,16 +31,20 @@ FLUXO NATURAL:
 LINGUAGEM: Natural, brasileira, consultiva
 """
     
-    async def start_active_campaign(self, phone: str, name: str) -> bool:
+    async def start_active_campaign(self, phone: str, name: str, seminario_nome: str = None) -> bool:
         """Inicia campanha ativa pós-seminário"""
         try:
             # Cria/atualiza lead no banco
             lead = db_manager.create_lead(phone=phone, name=name, source="seminario_dh")
             
-            # Mensagem inicial natural
+            # Busca informações do seminário atual via RAG
+            seminario_info = rag.get_current_seminario()
+            seminario_nome_final = seminario_nome or seminario_info['nome']
+            
+            # Mensagem inicial natural e genérica
             message = f"""Oi {name}!
 
-Aqui é da equipe CENAT. Vi que você participou do nosso seminário de Direitos Humanos e Saúde Mental.
+Aqui é Nat, da equipe CENAT. Vi que você participou do nosso seminário de {seminario_nome_final}.
 
 E aí, o que achou? Gostou?"""
             
@@ -99,7 +104,7 @@ E aí, o que achou? Gostou?"""
             if any(word in message_lower for word in ['sim', 'gostei', 'adorei', 'legal', 'bom', 'ótimo', 'otimo', 'amei']):
                 response = f"""Que bom! 
 
-Olha, tenho uma notícia boa: quem participou do seminário tem 5% de desconto na nossa pós-graduação de Saúde Mental e Direitos Humanos.
+Olha, tenho uma notícia boa: quem participou do seminário tem 5% de desconto nas nossas pós-graduações.
 
 Você teria interesse em saber mais sobre isso?"""
                 
@@ -109,12 +114,12 @@ Você teria interesse em saber mais sobre isso?"""
             elif any(word in message_lower for word in ['não', 'nao', 'ruim', 'fraco', 'não gostei']):
                 response = f"""Poxa, que pena...
 
-O que você sentiu que poderia ter sido melhor? Às vezes conseguimos suprir essas lacunas na pós-graduação."""
+O que você sentiu que poderia ter sido melhor? Às vezes conseguimos suprir essas lacunas nas nossas pós-graduações."""
                 
                 return response
             
             else:
-                # Resposta ambígua - Claude responde
+                # Resposta ambígua - Claude responde com contexto do RAG
                 return await self._generate_contextual_response(message, user_name, "feedback_seminario")
         
         # FLUXO 2: Interesse na pós
@@ -122,7 +127,7 @@ O que você sentiu que poderia ter sido melhor? Às vezes conseguimos suprir ess
             if any(word in message_lower for word in ['sim', 'quero', 'tenho interesse', 'me interessa', 'claro']):
                 response = f"""Perfeito!
 
-Pra eu te explicar direitinho como funciona a pós e garantir seu desconto, que tal conversarmos uns 20 minutinhos?
+Pra eu te explicar direitinho como funcionam nossas pós-graduações e garantir seu desconto, que tal conversarmos uns 20 minutinhos?
 
 Pode ser?"""
                 
@@ -234,7 +239,7 @@ Agendado pra {selected_slot['datetime_str']}.
 
 Acabei de mandar um convite com o link da reunião no seu email.
 
-Te espero lá! Vai ser ótimo conversar sobre a pós e garantir seu desconto.
+Te espero lá! Vai ser ótimo conversar sobre as pós-graduações e garantir seu desconto.
 
 Até mais! 😊"""
                 
@@ -282,11 +287,17 @@ Até mais! 😊"""
             return False
     
     async def _generate_contextual_response(self, message: str, user_name: str, context: str) -> str:
-        """Gera resposta natural usando Claude"""
+        """Gera resposta natural usando Claude + RAG"""
         
-        system_prompt = f"""Você é uma consultora do CENAT conversando por WhatsApp. Seu objetivo é agendar uma reunião de 20-30 min com pessoas que participaram do seminário de Direitos Humanos.
+        # Busca contexto relevante no RAG baseado na mensagem
+        rag_context = rag.search_context(message + " " + context)
+        
+        system_prompt = f"""Você é uma consultora do CENAT conversando por WhatsApp. Seu objetivo é agendar uma reunião de 20-30 min com pessoas que participaram de seminários.
 
-CONTEXTO: {context}
+CONTEXTO DO RAG:
+{rag_context}
+
+SITUAÇÃO ATUAL: {context}
 
 JEITO DE FALAR:
 - Natural, como uma pessoa real conversando
@@ -296,10 +307,10 @@ JEITO DE FALAR:
 - Respostas curtas (1-2 linhas máximo)
 - Consultiva, nunca insistente
 
-OBJETIVO: Agendar reunião para explicar a pós-graduação e desconto de 5%
+OBJETIVO: Agendar reunião para explicar pós-graduações e desconto de 5%
 
 REGRAS:
-- SEM mencionar telefones ou suporte
+- Use as informações do RAG quando relevante
 - Foco apenas no agendamento da conversa
 - Se a pessoa não quiser, respeitar
 - Linguagem brasileira casual do dia a dia"""
@@ -360,56 +371,35 @@ REGRAS:
             logger.error(f"❌ Erro ao processar Excel: {e}")
             return {"processed": 0, "errors": [str(e)]}
     
-    async def process_scheduled_actions(self) -> Dict:
-        """Processa ações agendadas"""
-        results = {"processed": 0, "errors": []}
+    async def start_campaign_batch(self, leads: List[Dict], seminario_nome: str = None) -> Dict:
+        """Inicia campanha para lote de leads"""
+        results = {"sent": 0, "errors": []}
         
-        try:
-            pending_actions = db_manager.get_pending_actions()
-            
-            for action, lead in pending_actions:
-                try:
-                    success = await self._execute_scheduled_action(action, lead)
-                    
-                    if success:
-                        db_manager.mark_action_executed(action.id, success=True)
-                        results["processed"] += 1
-                    else:
-                        db_manager.mark_action_executed(action.id, success=False)
-                        results["errors"].append(f"Falha na ação {action.id}")
-                    
-                    # Delay entre ações
-                    await asyncio.sleep(5)
-                    
-                except Exception as e:
-                    results["errors"].append(f"Erro ação {action.id}: {str(e)}")
-                    logger.error(f"❌ Erro ao executar ação {action.id}: {e}")
-            
-            logger.info(f"📊 Ações processadas: {results['processed']}")
-            return results
-            
-        except Exception as e:
-            logger.error(f"❌ Erro ao processar ações agendadas: {e}")
-            return results
-    
-    async def _execute_scheduled_action(self, action, lead) -> bool:
-        """Executa uma ação agendada específica"""
-        try:
-            if action.action_type == "follow_up":
-                message = f"Oi {lead.name}! E aí, conseguiu pensar melhor sobre nossa conversa?"
-                return await whatsapp_service.send_text_message(lead.phone, message)
-            
-            elif action.action_type == "reminder":
-                message = f"Oi! Só lembrando que temos aquele desconto de 5% na pós pra quem participou do seminário. Interesse?"
-                return await whatsapp_service.send_text_message(lead.phone, message)
-            
-            else:
-                logger.warning(f"Tipo de ação desconhecido: {action.action_type}")
-                return False
+        # Busca nome do seminário se não fornecido
+        if not seminario_nome:
+            seminario_info = rag.get_current_seminario()
+            seminario_nome = seminario_info['nome']
+        
+        for lead_data in leads:
+            try:
+                phone = lead_data.get('phone', lead_data.get('telefone', ''))
+                name = lead_data.get('name', lead_data.get('nome', 'Cliente'))
                 
-        except Exception as e:
-            logger.error(f"❌ Erro ao executar ação {action.action_type}: {e}")
-            return False
+                if phone and name:
+                    success = await self.start_active_campaign(phone, name, seminario_nome)
+                    if success:
+                        results["sent"] += 1
+                    else:
+                        results["errors"].append(f"Falha ao enviar para {name} ({phone})")
+                    
+                    # Delay entre envios
+                    await asyncio.sleep(settings.DELAY_BETWEEN_MESSAGES)
+                
+            except Exception as e:
+                results["errors"].append(f"Erro processando lead: {str(e)}")
+        
+        logger.info(f"📊 Campanha finalizada: {results['sent']} enviadas, {len(results['errors'])} erros")
+        return results
 
 # Instância global
 lead_agent = LeadAgent()
